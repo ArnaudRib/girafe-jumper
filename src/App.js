@@ -52,8 +52,8 @@ export const useCanvas = (
   return [canvasRef, setTracer];
 };
 
-function loadImage(url) {
-  const image = new Image(60, 45); // Using optional size for image
+function loadImage(url, width = 60, height = 45) {
+  const image = new Image(width, height); // Using optional size for image
   image.onload = () => {}; // Draw when image has loaded
 
   // Load an image of intrinsic size 300x227 in CSS pixels
@@ -62,6 +62,7 @@ function loadImage(url) {
   return image;
 }
 
+const backgroundImg = loadImage("background.png");
 const giraffeeImg = loadImage("giraffe.png");
 const deadGiraffeeImg = loadImage("dead-giraffe.png");
 const bushImg = loadImage("bush.png");
@@ -72,17 +73,20 @@ const GIRAFFE_SIZE = 120;
 const BUSH_SIZE = 60;
 const ground_giraffe = HEIGHT - GIRAFFE_SIZE;
 const jumpHeight = GIRAFFE_SIZE * 2;
+const BACKGROUND_WIDTH = 1200;
+const BACKGROUND_HEIGHT = 700;
 
 const DEFAULT_DIFFICULTY = 1;
 const DEFAULT_JUMP_SPEED = 10;
 const DEFAULT_WALK_SPEED = 6;
 
-const MAX_DIFFICULTY = 10;
+const MAX_DIFFICULTY = 15;
 const JUMP_SPEED_COEF = 0;
-const WALK_SPEED_COEF = 1;
+const WALK_SPEED_COEF = 1.5;
 
 let tick = 0;
 let bushes = [];
+let backgroundX = 0;
 
 let giraffeeJumpDirection = "";
 let giraffeeY = ground_giraffe;
@@ -112,10 +116,58 @@ function generateRandomNumber(min, max) {
   return Math.random() * (max - min) + min;
 }
 
+/**
+ * @param gl {CanvasRenderingContext2D}
+ */
+function drawSlidingBg(gl, status) {
+  if (gameIsRunning(status)) {
+    backgroundX = (backgroundX - walkSpeed / 4) % BACKGROUND_WIDTH;
+  }
+
+  gl.drawImage(
+    backgroundImg,
+    backgroundX,
+    -10,
+    BACKGROUND_WIDTH,
+    BACKGROUND_HEIGHT
+  );
+  gl.drawImage(
+    backgroundImg,
+    backgroundX + BACKGROUND_WIDTH,
+    -10,
+    BACKGROUND_WIDTH,
+    BACKGROUND_HEIGHT
+  );
+}
+
+/**
+ * @param gl {CanvasRenderingContext2D}
+ */
+function drawScore(gl) {
+  gl.font = "28px sans-serif";
+
+  const scoreBeaten = bestScore !== 0 && score > bestScore;
+  if (scoreBeaten) {
+    gl.fillStyle = "white";
+  }
+  const labelToDisplay =
+    "Score: " +
+    score +
+    (bestScore ? " (Record " + bestScore + ")" : "") +
+    (scoreBeaten ? " Record Battu !" : "");
+  gl.fillText(labelToDisplay, 10, 30);
+  gl.fillStyle = "black";
+  gl.fillText("Difficulté : " + difficulty, 10, 60);
+}
+
+function gameIsRunning(status) {
+  return status === "running";
+}
+
 function Game() {
   const [status, setStatus] = useState("running");
   const [canvasRef, tracer] = useCanvas("2d", null, {
-    status
+    status,
   });
 
   useEffect(() => {
@@ -123,13 +175,11 @@ function Game() {
   }, []);
   tracer((/** @type {CanvasRenderingContext2D} */ gl, canvas, store) => {
     gl.clearRect(0, 0, WIDTH, HEIGHT);
-    gl.font = "28px sans-serif";
-    const labelToDisplay =
-      "Score: " + score + (bestScore && " (Record " + bestScore + ")");
-    gl.fillText(labelToDisplay, 10, 30);
-    gl.fillText("Difficulté : " + difficulty, 10, 60);
 
-    if (store.status !== "running") {
+    drawSlidingBg(gl, store.status);
+    drawScore(gl);
+
+    if (!gameIsRunning(store.status)) {
       gl.drawImage(deadGiraffeeImg, 10, giraffeeY, GIRAFFE_SIZE, GIRAFFE_SIZE);
       return;
     }
@@ -148,15 +198,15 @@ function Game() {
     }
 
     // Increase difficulty
-    if (score > 0 && tick % 1000 === 0 && difficulty < MAX_DIFFICULTY) {
+    if (score > 0 && tick % 500 === 0 && difficulty < MAX_DIFFICULTY) {
       difficulty++;
       walkSpeed += WALK_SPEED_COEF;
       jumpSpeed += JUMP_SPEED_COEF;
     }
 
     // Spawn bushes
-    if (tick % 100 === 0) {
-      const randomDistance = generateRandomNumber(0.6, 1) * GIRAFFE_SIZE * 15;
+    if (tick % (75 - difficulty * 3) === 0) {
+      const randomDistance = generateRandomNumber(0.7, 1) * GIRAFFE_SIZE * 15;
       bushes.push({ x: WIDTH + randomDistance });
     }
 
@@ -212,7 +262,7 @@ function Game() {
             giraffeeJumpDirection = "down";
           }
         }}
-        style={{ border: "1px solid gray" }}
+        style={{ border: "1px solid gray", outline: "none" }}
         width={WIDTH}
         height={HEIGHT}
         ref={canvasRef}
