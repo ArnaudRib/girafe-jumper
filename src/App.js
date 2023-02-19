@@ -22,6 +22,7 @@ export const useCanvas = (
     canvas = canvasRef.current;
     if (canvas) {
       context = canvas.getContext(contextType, contextAttributes);
+      setupCanvas(canvas);
       animationFrameId = requestAnimationFrame(renderFrame);
     }
   };
@@ -63,13 +64,17 @@ function loadImage(url, width = 60, height = 45) {
 }
 
 const backgroundImg = loadImage("background.png");
-const giraffeeImg = loadImage("giraffe.png");
-const deadGiraffeeImg = loadImage("dead-giraffe.png");
+const giraffeeImgFramesNew = loadImage("running-giraffee-ratio-very-smoll.png");
+const deadGiraffeeImg = loadImage("dead.png");
 const bushImg = loadImage("bush.png");
 
+const GIRAFFE_RUNNING_IMG_FRAMES = 30;
+const GIRAFFE_RUNNING_IMG_WIDTH = 120;
+const GIRAFFE_RUNNING_IMG_HEIGHT = 120;
 const WIDTH = 600 * 1.5;
 const HEIGHT = 300 * 1.5;
 const GIRAFFE_SIZE = 120;
+
 const BUSH_SIZE = 60;
 const ground_giraffe = HEIGHT - GIRAFFE_SIZE;
 const jumpHeight = GIRAFFE_SIZE * 2;
@@ -112,6 +117,31 @@ function reset() {
   score = 0;
 }
 
+let i = 0;
+/**
+ * @param gl {CanvasRenderingContext2D}
+ */
+function animateGiraffe(gl, giraffeY, walkSpeed) {
+  // dont walk when jump
+  if (giraffeeJumpDirection === "") {
+    const frameSpeed = Math.floor(1 * walkSpeed * 0.2);
+    i = (i + frameSpeed) % GIRAFFE_RUNNING_IMG_FRAMES;
+  }
+
+  gl.drawImage(
+    giraffeeImgFramesNew,
+    // crop giraffe in list of frames
+    GIRAFFE_RUNNING_IMG_WIDTH * i,
+    0,
+    GIRAFFE_RUNNING_IMG_WIDTH,
+    GIRAFFE_RUNNING_IMG_HEIGHT,
+    -20,
+    giraffeY,
+    GIRAFFE_SIZE,
+    GIRAFFE_SIZE
+  );
+}
+
 function generateRandomNumber(min, max) {
   return Math.random() * (max - min) + min;
 }
@@ -121,7 +151,7 @@ function generateRandomNumber(min, max) {
  */
 function drawSlidingBg(gl, status) {
   if (gameIsRunning(status)) {
-    backgroundX = (backgroundX - walkSpeed / 4) % BACKGROUND_WIDTH;
+    backgroundX = Math.floor(backgroundX - walkSpeed / 4) % BACKGROUND_WIDTH;
   }
 
   gl.drawImage(
@@ -138,6 +168,22 @@ function drawSlidingBg(gl, status) {
     BACKGROUND_WIDTH,
     BACKGROUND_HEIGHT
   );
+}
+
+function setupCanvas(canvas) {
+  // Get the device pixel ratio, falling back to 1.
+  var dpr = window.devicePixelRatio || 1;
+  // Get the size of the canvas in CSS pixels.
+  var rect = canvas.getBoundingClientRect();
+  // Give the canvas pixel dimensions of their CSS
+  // size * the device pixel ratio.
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  var ctx = canvas.getContext("2d");
+  // Scale all drawing operations by the dpr, so you
+  // don't have to worry about the difference.
+  ctx.scale(dpr, dpr);
+  return ctx;
 }
 
 /**
@@ -185,9 +231,10 @@ function Game() {
     }
 
     tick += 1;
+    // gl.fillRect(0, giraffeeY, 0.55 * GIRAFFE_SIZE, GIRAFFE_SIZE);
     if (
       ground_giraffe - giraffeeY < BUSH_SIZE - 20 &&
-      bushes.some((b) => b.x <= 0.69 * GIRAFFE_SIZE && b.x > 0)
+      bushes.some((b) => b.x <= 0.55 * GIRAFFE_SIZE && b.x > 0)
     ) {
       if (score > bestScore) {
         bestScore = score;
@@ -226,17 +273,18 @@ function Game() {
     score += tick % 3 === 0 ? 1 : 0;
 
     // gl.fillRect(10, giraffeeY, GIRAFFE_SIZE, GIRAFFE_SIZE);
-    gl.drawImage(giraffeeImg, 10, giraffeeY, GIRAFFE_SIZE, GIRAFFE_SIZE);
+    // gl.drawImage(giraffeeImg, 10, giraffeeY, GIRAFFE_SIZE, GIRAFFE_SIZE);
+    animateGiraffe(gl, giraffeeY, walkSpeed);
 
     bushes = bushes
       .map((b) => {
         b.x -= walkSpeed;
-        // gl.fillRect(b.x, HEIGHT - BUSH_SIZE + 10, BUSH_SIZE, BUSH_SIZE);
+        // gl.fillRect(b.x, HEIGHT - BUSH_SIZE + 15, BUSH_SIZE, BUSH_SIZE);
 
         gl.drawImage(
           bushImg,
           b.x,
-          HEIGHT - BUSH_SIZE + 10,
+          HEIGHT - BUSH_SIZE + 15,
           BUSH_SIZE,
           BUSH_SIZE
         );
@@ -262,22 +310,59 @@ function Game() {
             giraffeeJumpDirection = "down";
           }
         }}
-        style={{ border: "1px solid gray", outline: "none" }}
-        width={WIDTH}
-        height={HEIGHT}
+        style={{
+          border: "1px solid gray",
+          outline: "none",
+          transform: "translate3d(0,0,0)",
+          width: WIDTH,
+          height: HEIGHT,
+        }}
         ref={canvasRef}
       />
       <div>
         {status === "failed" && (
-          <button
-            onClick={() => {
-              reset();
-              canvasRef.current.focus();
-              setStatus("running");
-            }}
-          >
-            Start again
-          </button>
+          <>
+            <button
+              onClick={() => {
+                reset();
+                canvasRef.current.focus();
+                setStatus("running");
+              }}
+            >
+              Start again
+            </button>
+            <br />
+            <button
+              onClick={() => {
+                const canvas = document.getElementById("canvas");
+
+                navigator.clipboard
+                  .write([
+                    new ClipboardItem({
+                      "image/png": new Promise((resolve) =>
+                        canvas.toBlob((blob) => resolve(blob))
+                      ),
+                    }),
+                  ])
+                  .then(() => {
+                    console.log("Copied ! :D");
+                    alert("Copied in your clipboard successfully !");
+                  })
+                  .catch((error) => {
+                    console.log(error);
+                    const img = canvas.toDataURL("image/png");
+                    const link = document.createElement("a");
+                    link.href = img;
+                    link.download = `girafe-${new Date().getTime()}.png`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  });
+              }}
+            >
+              Share
+            </button>
+          </>
         )}
       </div>
     </div>
