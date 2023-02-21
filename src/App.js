@@ -63,6 +63,108 @@ function loadImage(url, width = 60, height = 45) {
   return image;
 }
 
+function useAudioPlayer(audioPath) {
+  const [audioBuffer, setAudioBuffer] = useState(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [sourceNode, setSourceNode] = useState(null);
+  const [audioContext, setAudioContext] = useState(null);
+
+  useEffect(() => {
+    const fetchAudioFile = async () => {
+      const response = await fetch(audioPath);
+      console.log(response);
+      const arrayBuffer = await response.arrayBuffer();
+      const audioContext = new AudioContext();
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      setAudioContext(audioContext);
+      setAudioBuffer(audioBuffer);
+    };
+    fetchAudioFile();
+  }, [audioPath]);
+
+  const start = () => {
+    if (sourceNode && isPlaying) {
+      sourceNode.stop();
+      sourceNode.disconnect();
+    }
+
+    if (audioContext && audioBuffer) {
+      const newSourceNode = audioContext.createBufferSource();
+      newSourceNode.buffer = audioBuffer;
+      newSourceNode.connect(audioContext.destination);
+      newSourceNode.start(0); // <-- Ajouter cette ligne
+      setSourceNode(newSourceNode);
+      setIsPlaying(true);
+    }
+  };
+
+  const stop = () => {
+    if (sourceNode) {
+      sourceNode.stop();
+      setSourceNode(null);
+      setIsPlaying(false);
+    }
+  };
+
+  return {
+    isPlaying,
+    start,
+    stop,
+  };
+}
+
+const useAudio = (url) => {
+  const [audioContext, setAudioContext] = useState(null);
+  const [audioBuffer, setAudioBuffer] = useState(null);
+  const [sourceNodes, setSourceNodes] = useState([]);
+
+  useEffect(() => {
+    const fetchAudioFile = async () => {
+      const response = await fetch(url);
+      const arrayBuffer = await response.arrayBuffer();
+      const newAudioContext = new AudioContext();
+      const newAudioBuffer = await newAudioContext.decodeAudioData(arrayBuffer);
+      setAudioContext(newAudioContext);
+      setAudioBuffer(newAudioBuffer);
+    };
+    fetchAudioFile();
+
+    return () => {
+      if (audioContext) {
+        audioContext.close();
+      }
+    };
+  }, [url]);
+
+  const start = () => {
+    if (sourceNodes.length > 0) {
+      sourceNodes.forEach((s) => {
+        s.stop();
+        s.disconnect();
+      });
+    }
+
+    if (audioContext && audioBuffer) {
+      const sourceNode = audioContext.createBufferSource();
+      sourceNode.buffer = audioBuffer;
+      sourceNode.connect(audioContext.destination);
+      sourceNode.start(0);
+      setSourceNodes([sourceNode]);
+    }
+  };
+
+  const stop = () => {
+    sourceNodes.forEach((sourceNode) => {
+      sourceNode.stop();
+      sourceNode.disconnect();
+    });
+    setSourceNodes([]);
+  };
+
+  console.log(url, sourceNodes);
+  return { start, stop };
+};
+
 const backgroundImg = loadImage("background.png");
 const giraffeeImgFramesNew = loadImage("running-giraffee-ratio-very-smoll.png");
 const deadGiraffeeImg = loadImage("dead.png");
@@ -215,10 +317,13 @@ function Game() {
   const [canvasRef, tracer] = useCanvas("2d", null, {
     status,
   });
+  const jumpAudio = useAudio("jump-2.mp3");
+  const gameOverAudio = useAudio("game-over-2.mp3");
 
   useEffect(() => {
     canvasRef.current.focus();
   }, []);
+
   tracer((/** @type {CanvasRenderingContext2D} */ gl, canvas, store) => {
     gl.clearRect(0, 0, WIDTH, HEIGHT);
 
@@ -236,6 +341,9 @@ function Game() {
       ground_giraffe - giraffeeY < BUSH_SIZE - 20 &&
       bushes.some((b) => b.x <= 0.55 * GIRAFFE_SIZE && b.x > 0)
     ) {
+      // jumpAudio.stop()
+      gameOverAudio.start();
+
       if (score > bestScore) {
         bestScore = score;
       }
@@ -301,10 +409,13 @@ function Game() {
         onKeyDown={(e) => {
           e.preventDefault();
           if (e.code === "Space" && !Boolean(giraffeeJumpDirection)) {
+            jumpAudio.start();
             giraffeeJumpDirection = "up";
           }
         }}
         onKeyUp={(e) => {
+          jumpAudio.stop();
+
           e.preventDefault();
           if (e.code === "Space" && giraffeeJumpDirection === "up") {
             giraffeeJumpDirection = "down";
@@ -325,6 +436,7 @@ function Game() {
             <button
               onClick={() => {
                 reset();
+                gameOverAudio.stop();
                 canvasRef.current.focus();
                 setStatus("running");
               }}
